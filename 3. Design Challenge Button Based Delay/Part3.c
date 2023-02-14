@@ -12,7 +12,7 @@ void gpioInit();
 void timerInit();
 
 unsigned int time = 8192; // Default blink time: 0.25s
-unsigned int hold = 8192; // Default hold time
+unsigned int hold = 0; // Default hold time
 
 int main(void)
 {
@@ -73,7 +73,8 @@ __interrupt void Port_2(void)
 #pragma vector=PORT4_VECTOR
 __interrupt void Port_4(void)
 {
-
+    hold = 0;
+    time = 8192;
     P4IFG &= ~BIT1;                         // Clear P4.1 IFG
 }
 
@@ -89,8 +90,11 @@ __interrupt void Timer1_B0_ISR(void)
 #pragma vector = TIMER1_B1_VECTOR
 __interrupt void Timer1_B1_ISR(void)
 {
-    if (!(P2IN & BIT3)){
+    while (!(P2IN & BIT3)){
         hold++;
     }
-    time = hold;
+    if (hold >= 8192)
+        time = hold;
+    else
+        time = 8192;
 }
