@@ -11,8 +11,10 @@
 void gpioInit();
 void timerInit();
 
-unsigned int time = 8192; // Default blink time: 0.25s
-unsigned int hold = 0; // Default hold time
+const unsigned int default_time = 1024; // Default time: 0.25s
+unsigned int time = default_time; // Blink timer
+unsigned int hold = default_time; // Default hold time
+char count = 0;
 
 int main(void)
 {
@@ -30,12 +32,24 @@ int main(void)
     P4IFG &= ~BIT1;                         // P4.1 IFG cleared
 
     __bis_SR_register(GIE);                 // Enter LPM3 w/interrupt
+    while(1){
+        if (count == 1){
+            hold++;
+        }
+        if (count == 0){
+            TB1CCR0 = time;
+        }
+    }
 }
 
 void gpioInit(){
     // Configure RED LED on P1.0 as Output
     P1OUT &= ~BIT0;                         // Clear P1.0 output latch for a defined power-on state
     P1DIR |= BIT0;                          // Set P1.0 to output direction
+
+    P6OUT &= ~BIT6; // temp indicator light
+    P6DIR |= BIT6;
+    P6OUT &= ~BIT6;
 
     // Configure Button on P2.3 as input with pullup resistor
     P2OUT |= BIT3;                          // Configure P2.3 as pulled-up
@@ -54,19 +68,30 @@ void timerInit(){
     // Timer1_B3 setup
     TB1CCTL0 = CCIE;                          // TBCCR0 interrupt enabled
     TB1CCR0 = time;                           // Triggers the timer every time variable "time" passes
-    TB1CTL = TBSSEL_1 | MC_2;                 // ACLK, continuous mode
-
-    TB1CCTL1 = CCIE;
-    TB1CCR1 = 8192;                          // Initialized with dummy value
-    TB1CCR1 = TBSSEL_1 | ID_3 | MC_2;        // ACLK divided by 8, continuous mode
+    TB1CTL = TBSSEL_1 | MC_1 | ID_3;          // ACLK, up mode, clk divider 8
 }
 
 // Port 2 interrupt service routine
 #pragma vector=PORT2_VECTOR
 __interrupt void Port_2(void)
 {
+    if (!(P2IN & BIT3)) // Checks if the interrupt was triggered off a falling edge.
+    {
+        hold = 0;
+        count = 1;
+        P6OUT |= BIT6;
+        P2IES &= ~BIT3; // Swaps the interrupt to check for low to high edge (rising)
+    }
 
+    else if (P2IN & BIT3)       // Checks if the interrupt was triggered off a rising edge.
+      {
+          count = 0;
+          time = hold;
+          P6OUT &= ~BIT6;
+          P2IES |= BIT3;     // Swaps the interrupt to check for high to low edge (falling)
+      }
     P2IFG &= ~BIT3;                         // Clear P2.3 IFG
+
 }
 
 // Port 4 interrupt service routine
@@ -74,7 +99,8 @@ __interrupt void Port_2(void)
 __interrupt void Port_4(void)
 {
     hold = 0;
-    time = 8192;
+    P6OUT |= BIT6;
+    time = default_time;                    // Reset time back to default
     P4IFG &= ~BIT1;                         // Clear P4.1 IFG
 }
 
@@ -83,18 +109,4 @@ __interrupt void Port_4(void)
 __interrupt void Timer1_B0_ISR(void)
 {
     P1OUT ^= BIT0;                           // Toggle Red LED
-    TB1CCR0 += time;                         // Add Offset to TB1CCR0 based off of the time setting defined in the button interrupt
-}
-
-// Hold Timer interrupt service routine
-#pragma vector = TIMER1_B1_VECTOR
-__interrupt void Timer1_B1_ISR(void)
-{
-    while (!(P2IN & BIT3)){
-        hold++;
-    }
-    if (hold >= 8192)
-        time = hold;
-    else
-        time = 8192;
 }
