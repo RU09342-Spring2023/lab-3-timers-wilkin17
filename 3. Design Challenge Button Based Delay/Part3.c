@@ -8,13 +8,12 @@
  */
 
 #include <msp430.h>
+#include <stdint.h>
 void gpioInit();
 void timerInit();
 
-const unsigned int default_time = 1024; // Default time: 0.25s
-unsigned int time = default_time; // Blink timer
-unsigned int hold = default_time; // Default hold time
-char count = 0;
+int hold = 0;
+char timerstate = 0;
 
 int main(void)
 {
@@ -33,11 +32,11 @@ int main(void)
 
     __bis_SR_register(GIE);                 // Enter LPM3 w/interrupt
     while(1){
-        if (count == 1){
-            hold++;
+        if (timerstate == 0){
+            TB1CTL = TBSSEL_1 | MC_2 | ID_1;
         }
-        if (count == 0){
-            TB1CCR0 = time;
+        if (timerstate == 1){
+            TBCTL = TBSSEL_1 | MC_2 | ID_3;
         }
     }
 }
@@ -46,10 +45,6 @@ void gpioInit(){
     // Configure RED LED on P1.0 as Output
     P1OUT &= ~BIT0;                         // Clear P1.0 output latch for a defined power-on state
     P1DIR |= BIT0;                          // Set P1.0 to output direction
-
-    P6OUT &= ~BIT6; // temp indicator light
-    P6DIR |= BIT6;
-    P6OUT &= ~BIT6;
 
     // Configure Button on P2.3 as input with pullup resistor
     P2OUT |= BIT3;                          // Configure P2.3 as pulled-up
@@ -67,30 +62,34 @@ void gpioInit(){
 void timerInit(){
     // Timer1_B3 setup
     TB1CCTL0 = CCIE;                          // TBCCR0 interrupt enabled
-    TB1CCR0 = time;                           // Triggers the timer every time variable "time" passes
-    TB1CTL = TBSSEL_1 | MC_1 | ID_3;          // ACLK, up mode, clk divider 8
+    TB1CCR0 = 4096;                           // Triggers the timer every time variable "time" passes
+    TB1CTL = TBSSEL_1 | MC_2 | ID_1 | TBCLR | TBIE;          // ACLK, cont. mode, clk divider 2, interrupt enabled
+}
+
+// LED Timer interrupt service routine
+#pragma vector = TIMER1_B0_VECTOR
+__interrupt void Timer1_B0_ISR(void)
+{
+    if (timerstate == 0){
+        P1OUT ^= BIT0;
+        TB1CCR0 += 4096; // default
+    }
+    if (timerstate == 1){
+        P1OUT ^= BIT0;
+        TB1CCR0 += hold; // button hold time
+    }
 }
 
 // Port 2 interrupt service routine
 #pragma vector=PORT2_VECTOR
 __interrupt void Port_2(void)
 {
-    if (!(P2IN & BIT3)) // Checks if the interrupt was triggered off a falling edge.
-    {
-        hold = 0;
-        count = 1;
-        P6OUT |= BIT6;
-        P2IES &= ~BIT3; // Swaps the interrupt to check for low to high edge (rising)
-    }
-
-    else if (P2IN & BIT3)       // Checks if the interrupt was triggered off a rising edge.
-      {
-          count = 0;
-          time = hold;
-          P6OUT &= ~BIT6;
-          P2IES |= BIT3;     // Swaps the interrupt to check for high to low edge (falling)
-      }
-    P2IFG &= ~BIT3;                         // Clear P2.3 IFG
+   TB1CTL = TBSSEL_1 | MC_2 | ID_3 | TBCLR | TBIE;
+   timerstate = 1;
+   while (~P2IN & BIT3){
+       hold = TB1R;
+   }
+   P2IFG &= ~BIT3;                         // Clear P2.3 IFG
 
 }
 
@@ -98,15 +97,8 @@ __interrupt void Port_2(void)
 #pragma vector=PORT4_VECTOR
 __interrupt void Port_4(void)
 {
-    hold = 0;
-    P6OUT |= BIT6;
-    time = default_time;                    // Reset time back to default
+    timerstate = 0;
+    TB1CCR0 = 4096;
     P4IFG &= ~BIT1;                         // Clear P4.1 IFG
 }
 
-// LED Timer interrupt service routine
-#pragma vector = TIMER1_B0_VECTOR
-__interrupt void Timer1_B0_ISR(void)
-{
-    P1OUT ^= BIT0;                           // Toggle Red LED
-}
