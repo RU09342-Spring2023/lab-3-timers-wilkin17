@@ -36,7 +36,7 @@ int main(void)
             TB1CTL = TBSSEL_1 | MC_2 | ID_1;
         }
         if (timerstate == 1){
-            TBCTL = TBSSEL_1 | MC_2 | ID_3;
+            TB1CTL = TBSSEL_1 | MC_2 | ID_3;
         }
     }
 }
@@ -84,10 +84,10 @@ __interrupt void Timer1_B0_ISR(void)
 #pragma vector=PORT2_VECTOR
 __interrupt void Port_2(void)
 {
-   TB1CTL = TBSSEL_1 | MC_2 | ID_3 | TBCLR | TBIE;
+   TB1CTL = TBSSEL_1 | MC_2 | ID_3 | TBCLR | TBIE; // ACLK, cont. mode, clk divider 8
    timerstate = 1;
    while (~P2IN & BIT3){
-       hold = TB1R;
+       hold = TB1R;                             // Increase hold time while button is held down
    }
    P2IFG &= ~BIT3;                         // Clear P2.3 IFG
 
